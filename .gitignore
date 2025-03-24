@@ -1,3 +1,8 @@
+# Build Results
+build/
+sqlite/
+sqlite_tools/
+
 # Prerequisites
 *.d
 

@@ -55,3 +55,6 @@ and DigiKam's digital photo collections.
 - Ensure the paths to both your DigiKam database and the SQL script are correct
 - The script uses transactions, so the import is all-or-nothing, protecting your database from partial imports
 - Tags are created using `INSERT OR IGNORE`, so running the script multiple times won't create duplicate tags
+
+### Switching between DigiKam databases
+- To switch between digiKam databases, in DigiKam: Navigate to Settings -> Configure digiKam... -> Database and select the desired database from the dropdown list according to the digiKam manual.

@@ -39,6 +39,7 @@ catch {
 # Source and destination paths
 $sourceExe = ".\src\Debug\rootsmagic_utils.exe"
 $destPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
+$altDestPath = "C:\Users\shuskey\OneDrive\Pictures"
 
 # Verify source exists
 if (-not (Test-Path $sourceExe)) {
@@ -47,21 +48,39 @@ if (-not (Test-Path $sourceExe)) {
     exit 1
 }
 
-# Create destination directory if it doesn't exist
+# Verify destination paths exist
 if (-not (Test-Path $destPath)) {
-    Write-Host "Creating destination directory..."
-    New-Item -ItemType Directory -Path $destPath -Force | Out-Null
+    Pop-Location
+    Write-Host "Error: Destination path does not exist: ${destPath}" -ForegroundColor Red
+    exit 1
 }
 
-# Copy the executable
+if (-not (Test-Path $altDestPath)) {
+    Pop-Location
+    Write-Host "Error: Alternate destination path does not exist: ${altDestPath}" -ForegroundColor Red
+    exit 1
+}
+
+# Copy the executable to both locations
 Write-Host "Copying executable to $destPath..."
 try {
     Copy-Item -Path $sourceExe -Destination $destPath -Force
-    Write-Host "Successfully deployed rootsmagic_utils.exe" -ForegroundColor Green
+    Write-Host "Successfully deployed rootsmagic_utils.exe to ${destPath}" -ForegroundColor Green
 }
 catch {
     Pop-Location
-    Write-Host "Error copying executable: $_" -ForegroundColor Red
+    Write-Host "Error copying executable to ${destPath}: $_" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Copying executable to $altDestPath..."
+try {
+    Copy-Item -Path $sourceExe -Destination $altDestPath -Force
+    Write-Host "Successfully deployed rootsmagic_utils.exe to ${altDestPath}" -ForegroundColor Green
+}
+catch {
+    Pop-Location
+    Write-Host "Error copying executable to ${altDestPath}: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -70,4 +89,6 @@ Pop-Location
 
 Write-Host ""
 Write-Host "Build and deploy completed successfully!" -ForegroundColor Green
-Write-Host "Executable location: $destPath\rootsmagic_utils.exe" 
+Write-Host "Executable locations:"
+Write-Host "- ${destPath}\rootsmagic_utils.exe"
+Write-Host "- ${altDestPath}\rootsmagic_utils.exe" 

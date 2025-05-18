@@ -143,6 +143,9 @@ bool RootsMagicImporter::exportNamesToSql(const std::string& outputPath, const s
     m_outputFile << "--       and check for any special characters in tag names.\n";
     m_outputFile << "-- Note: All people will be imported as tags under a 'RootsMagic' parent tag\n";
     m_outputFile << "--       (unless a different parent tag name was specified).\n";
+    m_outputFile << "-- Note: A helper script may have been deployed to your digikam folder that contains something like:\n";
+    m_outputFile << "-- .\\rootsmagic_utils.exe -d '..\\RootMagic\\Kennedy.rmtree'\n";
+    m_outputFile << "-- sqlite3 \".\\digikam4.db\" \".read tags.sql\"\n";
     m_outputFile << "--\n\n";
 
     m_outputFile << "BEGIN TRANSACTION;\n\n";

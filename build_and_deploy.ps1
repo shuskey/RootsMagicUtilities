@@ -36,59 +36,59 @@ catch {
     exit 1
 }
 
+Pop-Location
+
 # Source and destination paths
-$sourceExe = ".\src\Debug\rootsmagic_utils.exe"
-$destPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
-$altDestPath = "C:\Users\shuskey\OneDrive\Pictures"
+$sourceExe = ".\build\src\Debug\rootsmagic_utils.exe"
+$sourceHuskeyPs1 = ".\RootsMagicHuskeyPeopleToDigiKamTags.ps1"
+$sourceKennedyPs1 = ".\RootsMagicKennedyPeopleToDigiKamTags.ps1"
+$KennedyPicturesDestPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
+$HuskeyPicturesDestPath = "C:\Users\shuskey\OneDrive\Pictures"
 
 # Verify source exists
 if (-not (Test-Path $sourceExe)) {
-    Pop-Location
     Write-Host "Error: Built executable not found at $sourceExe" -ForegroundColor Red
     exit 1
 }
 
 # Verify destination paths exist
-if (-not (Test-Path $destPath)) {
-    Pop-Location
-    Write-Host "Error: Destination path does not exist: ${destPath}" -ForegroundColor Red
+if (-not (Test-Path $KennedyPicturesDestPath)) {
+    Write-Host "Error: Destination path does not exist: ${KennedyPicturesDestPath}" -ForegroundColor Red
     exit 1
 }
 
-if (-not (Test-Path $altDestPath)) {
-    Pop-Location
-    Write-Host "Error: Alternate destination path does not exist: ${altDestPath}" -ForegroundColor Red
+if (-not (Test-Path $HuskeyPicturesDestPath)) {
+    Write-Host "Error: Alternate destination path does not exist: ${HuskeyPicturesDestPath}" -ForegroundColor Red
     exit 1
 }
 
 # Copy the executable to both locations
-Write-Host "Copying executable to $destPath..."
+Write-Host "Copying executable and script to $KennedyPicturesDestPath"
 try {
-    Copy-Item -Path $sourceExe -Destination $destPath -Force
-    Write-Host "Successfully deployed rootsmagic_utils.exe to ${destPath}" -ForegroundColor Green
+    Copy-Item -Path $sourceExe -Destination $KennedyPicturesDestPath -Force
+    Copy-Item -Path $sourceKennedyPs1 -Destination $KennedyPicturesDestPath -Force
+    Write-Host "Successfully deployed to ${KennedyPicturesDestPath}" -ForegroundColor Green
 }
 catch {
-    Pop-Location
-    Write-Host "Error copying executable to ${destPath}: $_" -ForegroundColor Red
+    Write-Host "Error deploying to ${KennedyPicturesDestPath}: $_" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "Copying executable to $altDestPath..."
+Write-Host "Copying executable and script to $HuskeyPicturesDestPath"
 try {
-    Copy-Item -Path $sourceExe -Destination $altDestPath -Force
-    Write-Host "Successfully deployed rootsmagic_utils.exe to ${altDestPath}" -ForegroundColor Green
+    Copy-Item -Path $sourceExe -Destination $HuskeyPicturesDestPath -Force
+    Copy-Item -Path $sourceHuskeyPs1 -Destination $HuskeyPicturesDestPath -Force
+    Write-Host "Successfully deployed to ${HuskeyPicturesDestPath}" -ForegroundColor Green
 }
 catch {
-    Pop-Location
-    Write-Host "Error copying executable to ${altDestPath}: $_" -ForegroundColor Red
+    Write-Host "Error deploying to ${HuskeyPicturesDestPath}: $_" -ForegroundColor Red
     exit 1
 }
-
-# Return to original directory
-Pop-Location
 
 Write-Host ""
 Write-Host "Build and deploy completed successfully!" -ForegroundColor Green
-Write-Host "Executable locations:"
-Write-Host "- ${destPath}\rootsmagic_utils.exe"
-Write-Host "- ${altDestPath}\rootsmagic_utils.exe" 
+Write-Host "Deployed to these locations:"
+Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceExe -Leaf)"
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceExe -Leaf)" 
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
+Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceKennedyPs1 -Leaf)"

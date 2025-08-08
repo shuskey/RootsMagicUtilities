@@ -39,15 +39,23 @@ catch {
 Pop-Location
 
 # Source and destination paths
-$sourceExe = ".\build\src\Debug\rootsmagic_utils.exe"
+$sourceUtilsExe = ".\build\src\Debug\rootsmagic_utils.exe"
+$sourceSyncExe = ".\build\src\Debug\rootsmagic_sync.exe"
 $sourceHuskeyPs1 = ".\RootsMagicHuskeyPeopleToDigiKamTags.ps1"
 $sourceKennedyPs1 = ".\RootsMagicKennedyPeopleToDigiKamTags.ps1"
+$sourceHuskeySyncPs1 = ".\RootsMagicHuskeySyncToDigiKamTags.ps1"
+$sourceKennedySyncPs1 = ".\RootsMagicKennedySyncToDigiKamTags.ps1"
 $KennedyPicturesDestPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
 $HuskeyPicturesDestPath = "C:\Users\shuskey\OneDrive\Pictures"
 
-# Verify source exists
-if (-not (Test-Path $sourceExe)) {
-    Write-Host "Error: Built executable not found at $sourceExe" -ForegroundColor Red
+# Verify source executables exist
+if (-not (Test-Path $sourceUtilsExe)) {
+    Write-Host "Error: Built executable not found at $sourceUtilsExe" -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $sourceSyncExe)) {
+    Write-Host "Error: Built executable not found at $sourceSyncExe" -ForegroundColor Red
     exit 1
 }
 
@@ -62,11 +70,13 @@ if (-not (Test-Path $HuskeyPicturesDestPath)) {
     exit 1
 }
 
-# Copy the executable to both locations
-Write-Host "Copying executable and script to $KennedyPicturesDestPath"
+# Copy the executables to both locations
+Write-Host "Copying executables and scripts to $KennedyPicturesDestPath"
 try {
-    Copy-Item -Path $sourceExe -Destination $KennedyPicturesDestPath -Force
+    Copy-Item -Path $sourceUtilsExe -Destination $KennedyPicturesDestPath -Force
+    Copy-Item -Path $sourceSyncExe -Destination $KennedyPicturesDestPath -Force
     Copy-Item -Path $sourceKennedyPs1 -Destination $KennedyPicturesDestPath -Force
+    Copy-Item -Path $sourceKennedySyncPs1 -Destination $KennedyPicturesDestPath -Force
     Write-Host "Successfully deployed to ${KennedyPicturesDestPath}" -ForegroundColor Green
 }
 catch {
@@ -74,10 +84,12 @@ catch {
     exit 1
 }
 
-Write-Host "Copying executable and script to $HuskeyPicturesDestPath"
+Write-Host "Copying executables and scripts to $HuskeyPicturesDestPath"
 try {
-    Copy-Item -Path $sourceExe -Destination $HuskeyPicturesDestPath -Force
+    Copy-Item -Path $sourceUtilsExe -Destination $HuskeyPicturesDestPath -Force
+    Copy-Item -Path $sourceSyncExe -Destination $HuskeyPicturesDestPath -Force
     Copy-Item -Path $sourceHuskeyPs1 -Destination $HuskeyPicturesDestPath -Force
+    Copy-Item -Path $sourceHuskeySyncPs1 -Destination $HuskeyPicturesDestPath -Force
     Write-Host "Successfully deployed to ${HuskeyPicturesDestPath}" -ForegroundColor Green
 }
 catch {
@@ -88,7 +100,13 @@ catch {
 Write-Host ""
 Write-Host "Build and deploy completed successfully!" -ForegroundColor Green
 Write-Host "Deployed to these locations:"
-Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceExe -Leaf)"
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceExe -Leaf)" 
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
+Write-Host "Kennedy Location:"
+Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceUtilsExe -Leaf)"
+Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
 Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceKennedyPs1 -Leaf)"
+Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceKennedySyncPs1 -Leaf)"
+Write-Host "Huskey Location:"
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceUtilsExe -Leaf)" 
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
+Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeySyncPs1 -Leaf)"

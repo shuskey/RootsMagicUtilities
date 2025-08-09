@@ -168,6 +168,34 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
             }
         }
         
+        // Post-rescue cleanup: Check for any new duplicates created by rescue operations
+        if (m_tagsRescued > 0) {
+            std::cout << "Checking for duplicates after rescue operations..." << std::endl;
+            
+            // Reload both tag trees to get current state
+            auto updatedExistingTags = loadExistingDigiKamTags(parentTagName);
+            auto updatedLostFoundTags = loadExistingDigiKamTags(lostFoundTagName);
+            
+            // Find any duplicates that now exist in both trees
+            std::vector<int> postRescueDuplicates;
+            for (const auto& [ownerId, lostTag] : updatedLostFoundTags) {
+                if (updatedExistingTags.find(ownerId) != updatedExistingTags.end()) {
+                    // This ownerId exists in both trees after rescue - remove from Lost & Found
+                    postRescueDuplicates.push_back(lostTag.tagId);
+                    std::cout << "Found post-rescue duplicate: " << lostTag.name << " (OwnerID: " << ownerId << ")" << std::endl;
+                }
+            }
+            
+            if (!postRescueDuplicates.empty()) {
+                std::cout << "Removing " << postRescueDuplicates.size() << " post-rescue duplicates from Lost & Found..." << std::endl;
+                if (removeDuplicateTags(postRescueDuplicates)) {
+                    // Update our local copy of Lost & Found tags
+                    lostFoundTags = loadExistingDigiKamTags(lostFoundTagName);
+                    std::cout << "Post-rescue cleanup completed successfully" << std::endl;
+                }
+            }
+        }
+        
         std::cout << "Found " << newPeopleCount << " new people to process" << std::endl;
         std::cout << "DEBUG: existingTags.size() = " << existingTags.size() << std::endl;
 
@@ -368,22 +396,45 @@ bool RootsMagicSync::ensureParentTagExists(const std::string& tagName)
 
 bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::string& parentTagName)
 {
-    // First check if tag already exists under RootsMagic parent
-    std::string checkSql = R"(
+    // First check if tag already exists under RootsMagic parent with the same OwnerID
+    std::string checkRootsMagicSql = R"(
         SELECT t.id FROM Tags t 
+        JOIN TagProperties tp ON t.id = tp.tagid 
         WHERE t.name = ? AND t.pid = (SELECT id FROM Tags WHERE name = ?)
+        AND tp.property = 'rootsmagic_owner_id' AND CAST(tp.value AS INTEGER) = ?
     )";
     
     sqlite3_stmt* stmt;
-    int rc = sqlite3_prepare_v2(m_digiKamDb, checkSql.c_str(), -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(m_digiKamDb, checkRootsMagicSql.c_str(), -1, &stmt, nullptr);
     if (rc == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, person.formattedName.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, parentTagName.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 3, person.ownerId);
         
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            // Tag already exists under RootsMagic parent - this is OK, fail silently
+            // Tag already exists under RootsMagic parent with same OwnerID - this is OK
             sqlite3_finalize(stmt);
             return true;
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    // Check if tag exists in Lost & Found with the same OwnerID - if so, return false to trigger rescue
+    std::string checkLostFoundSql = R"(
+        SELECT t.id FROM Tags t 
+        JOIN TagProperties tp ON t.id = tp.tagid 
+        WHERE t.pid = (SELECT id FROM Tags WHERE name = 'Lost & Found')
+        AND tp.property = 'rootsmagic_owner_id' AND CAST(tp.value AS INTEGER) = ?
+    )";
+    
+    rc = sqlite3_prepare_v2(m_digiKamDb, checkLostFoundSql.c_str(), -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, person.ownerId);
+        
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            // Tag exists in Lost & Found with same OwnerID - return false to trigger rescue
+            sqlite3_finalize(stmt);
+            return false;
         }
         sqlite3_finalize(stmt);
     }
@@ -560,8 +611,10 @@ bool RootsMagicSync::rescueTagFromLostFound(const PersonRecord& person, const st
     }
     
     // Update the tag name if needed
+    bool nameWasUpdated = false;
     if (it->second.name != person.formattedName) {
         if (updatePersonTag(it->second.tagId, person)) {
+            nameWasUpdated = true;
             std::cout << "Updated rescued tag name: '" << it->second.name << "' -> '" << person.formattedName << "'" << std::endl;
         }
     }
@@ -589,17 +642,29 @@ bool RootsMagicSync::rescueTagFromLostFound(const PersonRecord& person, const st
         }
     }
     
-    // Ensure person property exists and is correct
-    std::string updatePersonPropSql = R"(
-        INSERT OR REPLACE INTO TagProperties (tagid, property, value) 
-        VALUES (?, 'person', ?)
-    )";
-    rc = sqlite3_prepare_v2(m_digiKamDb, updatePersonPropSql.c_str(), -1, &stmt, nullptr);
-    if (rc == SQLITE_OK) {
-        sqlite3_bind_int(stmt, 1, it->second.tagId);
-        sqlite3_bind_text(stmt, 2, person.formattedName.c_str(), -1, SQLITE_STATIC);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+    // Ensure person property exists and is correct (only if we didn't already update it)
+    if (!nameWasUpdated) {
+        // Check if person property already exists
+        std::string checkPersonSql = "SELECT COUNT(*) FROM TagProperties WHERE tagid = ? AND property = 'person'";
+        rc = sqlite3_prepare_v2(m_digiKamDb, checkPersonSql.c_str(), -1, &stmt, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, it->second.tagId);
+            if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) == 0) {
+                sqlite3_finalize(stmt);
+                
+                // Add missing person property
+                std::string addPersonSql = "INSERT INTO TagProperties (tagid, property, value) VALUES (?, 'person', ?)";
+                rc = sqlite3_prepare_v2(m_digiKamDb, addPersonSql.c_str(), -1, &stmt, nullptr);
+                if (rc == SQLITE_OK) {
+                    sqlite3_bind_int(stmt, 1, it->second.tagId);
+                    sqlite3_bind_text(stmt, 2, person.formattedName.c_str(), -1, SQLITE_STATIC);
+                    sqlite3_step(stmt);
+                    sqlite3_finalize(stmt);
+                }
+            } else {
+                sqlite3_finalize(stmt);
+            }
+        }
     }
     
     return true;

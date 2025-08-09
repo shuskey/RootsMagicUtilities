@@ -45,8 +45,8 @@ $sourceHuskeyPs1 = ".\RootsMagicHuskeyPeopleToDigiKamTags.ps1"
 $sourceKennedyPs1 = ".\RootsMagicKennedyPeopleToDigiKamTags.ps1"
 $sourceHuskeySyncPs1 = ".\RootsMagicHuskeySyncToDigiKamTags.ps1"
 $sourceKennedySyncPs1 = ".\RootsMagicKennedySyncToDigiKamTags.ps1"
-$KennedyPicturesDestPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
-$HuskeyPicturesDestPath = "C:\Users\shuskey\OneDrive\Pictures"
+$KennedyDigiKamDestPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
+$HuskeyDigiKamDestPath = "C:\Users\shuskey\OneDrive\Pictures"
 
 # Verify source executables exist
 if (-not (Test-Path $sourceUtilsExe)) {
@@ -60,40 +60,40 @@ if (-not (Test-Path $sourceSyncExe)) {
 }
 
 # Verify destination paths exist
-if (-not (Test-Path $KennedyPicturesDestPath)) {
-    Write-Host "Error: Destination path does not exist: ${KennedyPicturesDestPath}" -ForegroundColor Red
+if (-not (Test-Path $KennedyDigiKamDestPath)) {
+    Write-Host "Error: Destination path does not exist: ${KennedyDigiKamDestPath}" -ForegroundColor Red
     exit 1
 }
 
-if (-not (Test-Path $HuskeyPicturesDestPath)) {
-    Write-Host "Error: Alternate destination path does not exist: ${HuskeyPicturesDestPath}" -ForegroundColor Red
+if (-not (Test-Path $HuskeyDigiKamDestPath)) {
+    Write-Host "Error: Alternate destination path does not exist: ${HuskeyDigiKamDestPath}" -ForegroundColor Red
     exit 1
 }
 
 # Copy the executables to both locations
-Write-Host "Copying executables and scripts to $KennedyPicturesDestPath"
+Write-Host "Copying executables and scripts to $KennedyDigiKamDestPath"
 try {
-    Copy-Item -Path $sourceUtilsExe -Destination $KennedyPicturesDestPath -Force
-    Copy-Item -Path $sourceSyncExe -Destination $KennedyPicturesDestPath -Force
-    Copy-Item -Path $sourceKennedyPs1 -Destination $KennedyPicturesDestPath -Force
-    Copy-Item -Path $sourceKennedySyncPs1 -Destination $KennedyPicturesDestPath -Force
-    Write-Host "Successfully deployed to ${KennedyPicturesDestPath}" -ForegroundColor Green
+    Copy-Item -Path $sourceUtilsExe -Destination $KennedyDigiKamDestPath -Force
+    Copy-Item -Path $sourceSyncExe -Destination $KennedyDigiKamDestPath -Force
+    Copy-Item -Path $sourceKennedyPs1 -Destination $KennedyDigiKamDestPath -Force
+    Copy-Item -Path $sourceKennedySyncPs1 -Destination $KennedyDigiKamDestPath -Force
+    Write-Host "Successfully deployed to ${KennedyDigiKamDestPath}" -ForegroundColor Green
 }
 catch {
-    Write-Host "Error deploying to ${KennedyPicturesDestPath}: $_" -ForegroundColor Red
+    Write-Host "Error deploying to ${KennedyDigiKamDestPath}: $_" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "Copying executables and scripts to $HuskeyPicturesDestPath"
+Write-Host "Copying executables and scripts to $HuskeyDigiKamDestPath"
 try {
-    Copy-Item -Path $sourceUtilsExe -Destination $HuskeyPicturesDestPath -Force
-    Copy-Item -Path $sourceSyncExe -Destination $HuskeyPicturesDestPath -Force
-    Copy-Item -Path $sourceHuskeyPs1 -Destination $HuskeyPicturesDestPath -Force
-    Copy-Item -Path $sourceHuskeySyncPs1 -Destination $HuskeyPicturesDestPath -Force
-    Write-Host "Successfully deployed to ${HuskeyPicturesDestPath}" -ForegroundColor Green
+    Copy-Item -Path $sourceUtilsExe -Destination $HuskeyDigiKamDestPath -Force
+    Copy-Item -Path $sourceSyncExe -Destination $HuskeyDigiKamDestPath -Force
+    Copy-Item -Path $sourceHuskeyPs1 -Destination $HuskeyDigiKamDestPath -Force
+    Copy-Item -Path $sourceHuskeySyncPs1 -Destination $HuskeyDigiKamDestPath -Force
+    Write-Host "Successfully deployed to ${HuskeyDigiKamDestPath}" -ForegroundColor Green
 }
 catch {
-    Write-Host "Error deploying to ${HuskeyPicturesDestPath}: $_" -ForegroundColor Red
+    Write-Host "Error deploying to ${HuskeyDigiKamDestPath}: $_" -ForegroundColor Red
     exit 1
 }
 
@@ -101,12 +101,12 @@ Write-Host ""
 Write-Host "Build and deploy completed successfully!" -ForegroundColor Green
 Write-Host "Deployed to these locations:"
 Write-Host "Kennedy Location:"
-Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceUtilsExe -Leaf)"
-Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
-Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceKennedyPs1 -Leaf)"
-Write-Host "- ${KennedyPicturesDestPath}\$(Split-Path $sourceKennedySyncPs1 -Leaf)"
+Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceUtilsExe -Leaf)"
+Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
+Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceKennedyPs1 -Leaf)"
+Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceKennedySyncPs1 -Leaf)"
 Write-Host "Huskey Location:"
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceUtilsExe -Leaf)" 
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
-Write-Host "- ${HuskeyPicturesDestPath}\$(Split-Path $sourceHuskeySyncPs1 -Leaf)"
+Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceUtilsExe -Leaf)" 
+Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
+Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
+Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceHuskeySyncPs1 -Leaf)"

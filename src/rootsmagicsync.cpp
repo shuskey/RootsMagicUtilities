@@ -101,6 +101,14 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
             }
         }
         
+        // Migrate existing tags to include OwnerID in their names if they don't already have it
+        std::cout << "Checking for tags that need OwnerID added to names..." << std::endl;
+        if (migrateTagNamesToIncludeOwnerID(parentTagName, rmPeople)) {
+            // Reload existing tags after OwnerID name migration
+            existingTags = loadExistingDigiKamTags(parentTagName);
+            std::cout << "After OwnerID migration: Found " << existingTags.size() << " existing RootsMagic tags in DigiKam" << std::endl;
+        }
+        
         std::cout << "Loading tags from Lost & Found..." << std::endl;
         auto lostFoundTags = loadExistingDigiKamTags(lostFoundTagName);
         std::cout << "Found " << lostFoundTags.size() << " tags in Lost & Found" << std::endl;
@@ -733,6 +741,100 @@ bool RootsMagicSync::migrateLegacyTags(const std::string& parentTagName, const s
     return migratedCount > 0;
 }
 
+bool RootsMagicSync::migrateTagNamesToIncludeOwnerID(const std::string& parentTagName, const std::vector<PersonRecord>& rmPeople)
+{
+    std::cout << "Migrating existing tags to include OwnerID in names..." << std::endl;
+    
+    // Load all tags under RootsMagic parent that have rootsmagic_owner_id property but don't have "(OwnerID: " in their name
+    std::string sql = R"(
+        SELECT t.id, t.name, CAST(tp.value AS INTEGER) as owner_id 
+        FROM Tags t 
+        JOIN TagProperties tp ON t.id = tp.tagid 
+        WHERE t.pid = (SELECT id FROM Tags WHERE name = ?)
+        AND tp.property = 'rootsmagic_owner_id'
+        AND t.name NOT LIKE '%(OwnerID: %'
+    )";
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(m_digiKamDb, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare OwnerID migration query: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt, 1, parentTagName.c_str(), -1, SQLITE_STATIC);
+    
+    struct TagToMigrate {
+        int tagId;
+        std::string currentName;
+        int ownerId;
+    };
+    
+    std::vector<TagToMigrate> tagsToMigrate;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        TagToMigrate tag;
+        tag.tagId = sqlite3_column_int(stmt, 0);
+        tag.currentName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        tag.ownerId = sqlite3_column_int(stmt, 2);
+        tagsToMigrate.push_back(tag);
+    }
+    sqlite3_finalize(stmt);
+    
+    std::cout << "Found " << tagsToMigrate.size() << " tags to migrate to include OwnerID" << std::endl;
+    
+    int migratedCount = 0;
+    for (const auto& tag : tagsToMigrate) {
+        // Find the corresponding PersonRecord to get the proper formatted name
+        PersonRecord matchedPerson;
+        bool foundMatch = false;
+        
+        for (const auto& person : rmPeople) {
+            if (person.ownerId == tag.ownerId) {
+                matchedPerson = person;
+                foundMatch = true;
+                break;
+            }
+        }
+        
+        if (!foundMatch) {
+            std::cout << "Warning: No matching person found for tag '" << tag.currentName << "' (OwnerID: " << tag.ownerId << ")" << std::endl;
+            continue;
+        }
+        
+        // Update the tag name to include OwnerID
+        std::string updateSql = "UPDATE Tags SET name = ? WHERE id = ?";
+        rc = sqlite3_prepare_v2(m_digiKamDb, updateSql.c_str(), -1, &stmt, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, matchedPerson.formattedName.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_int(stmt, 2, tag.tagId);
+            rc = sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+            
+            if (rc == SQLITE_DONE) {
+                migratedCount++;
+                if (migratedCount <= 5) { // Show first 5 for feedback
+                    std::cout << "Migrated: '" << tag.currentName << "' -> '" << matchedPerson.formattedName << "'" << std::endl;
+                }
+                
+                // Also update the person property to match
+                std::string updatePersonSql = "UPDATE TagProperties SET value = ? WHERE tagid = ? AND property = 'person'";
+                rc = sqlite3_prepare_v2(m_digiKamDb, updatePersonSql.c_str(), -1, &stmt, nullptr);
+                if (rc == SQLITE_OK) {
+                    sqlite3_bind_text(stmt, 1, matchedPerson.formattedName.c_str(), -1, SQLITE_STATIC);
+                    sqlite3_bind_int(stmt, 2, tag.tagId);
+                    sqlite3_step(stmt);
+                    sqlite3_finalize(stmt);
+                }
+            } else {
+                std::cerr << "Failed to migrate tag '" << tag.currentName << "': " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+            }
+        }
+    }
+    
+    std::cout << "Successfully migrated " << migratedCount << " tags to include OwnerID in names" << std::endl;
+    return migratedCount > 0 || tagsToMigrate.empty(); // Success if we migrated some or there were none to migrate
+}
+
 bool RootsMagicSync::removeDuplicateTags(const std::vector<int>& tagIds)
 {
     if (tagIds.empty()) return true;
@@ -774,7 +876,7 @@ std::string RootsMagicSync::formatPersonName(const PersonRecord& person)
     std::string birthYearStr = (person.birthYear == 0) ? "unknown" : std::to_string(person.birthYear);
     std::string deathYearStr = (person.deathYear == 0) ? "unknown" : std::to_string(person.deathYear);
     
-    return person.given + " " + person.surname + " " + birthYearStr + "-" + deathYearStr;
+    return person.given + " " + person.surname + " " + birthYearStr + "-" + deathYearStr + " (OwnerID: " + std::to_string(person.ownerId) + ")";
 }
 
 std::string RootsMagicSync::escapeSqlString(const std::string& str)

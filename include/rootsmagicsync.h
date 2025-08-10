@@ -53,6 +53,7 @@ private:
     bool rescueTagFromLostFound(const PersonRecord& person, const std::string& parentTagName,
                                const std::unordered_map<int, DigiKamTag>& lostFoundTags);
     bool migrateLegacyTags(const std::string& parentTagName, const std::vector<PersonRecord>& rmPeople);
+    bool migrateTagNamesToIncludeOwnerID(const std::string& parentTagName, const std::vector<PersonRecord>& rmPeople);
     bool removeDuplicateTags(const std::vector<int>& tagIds);
 
     // Utility functions

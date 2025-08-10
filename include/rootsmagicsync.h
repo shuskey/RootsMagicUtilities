@@ -35,10 +35,6 @@ public:
                         const std::string& lostFoundTagName = "Lost & Found");
 
 private:
-    // Backup functions
-    bool createBackupTables();
-    bool restoreFromBackup();
-
     // Data loading functions
     std::vector<PersonRecord> loadRootsMagicPeople();
     std::unordered_map<int, DigiKamTag> loadExistingDigiKamTags(const std::string& parentTagName);
@@ -52,8 +48,7 @@ private:
                                     const std::unordered_map<int, DigiKamTag>& existingTags);
     bool rescueTagFromLostFound(const PersonRecord& person, const std::string& parentTagName,
                                const std::unordered_map<int, DigiKamTag>& lostFoundTags);
-    bool migrateLegacyTags(const std::string& parentTagName, const std::vector<PersonRecord>& rmPeople);
-    bool migrateTagNamesToIncludeOwnerID(const std::string& parentTagName, const std::vector<PersonRecord>& rmPeople);
+
     bool removeDuplicateTags(const std::vector<int>& tagIds);
 
     // Utility functions

@@ -1,10 +1,9 @@
 A C++ utility suite designed to work with RootsMagic genealogy database files, specifically focusing on extracting and processing data for integration with other applications. 
 
-This project includes two main utilities:
-1. **rootsmagic_utils.exe** - Exports names from RootsMagic and generates a SQL script to add them as tags in DigiKam
-2. **rootsmagic_sync.exe** - Directly synchronizes RootsMagic people with DigiKam tags, handling updates and orphaned entries
+This project includes the main utility:
+**rootsmagic_sync.exe** - Directly synchronizes RootsMagic people with DigiKam tags, handling updates and orphaned entries
 
-Both utilities maintain references back to the original RootsMagic OwnerID of each person as a property of that tag. 
+The utility maintains references back to the original RootsMagic OwnerID of each person as a property of that tag. 
 This integration enables projects such as Timeline-Traveler to enrich family history with thumbnails and full photos, creating a bridge between RootsMagic genealogical data 
 and DigiKam's digital photo collections.
 
@@ -14,15 +13,10 @@ and DigiKam's digital photo collections.
 graph TD
     A["RootsMagic Database<br/>(*.rmgc, *.rmtree)"] --> B["RootsMagic Utilities"]
     
-    B --> C["rootsmagic_utils.exe<br/>(SQL Export Tool)"]
-    B --> D["rootsmagic_sync.exe<br/>(Direct Sync Tool)<br/>⭐ RECOMMENDED"]
-    
-    C --> E["Generated SQL Script<br/>(tags.sql)"]
-    E --> F["Manual SQLite Import"]
-    F --> G["DigiKam Database<br/>(digikam4.db)"]
+    B --> D["rootsmagic_sync.exe<br/>(Direct Sync Tool)"]
     
     D --> H["Direct Database<br/>Synchronization"]
-    H --> G
+    H --> G["DigiKam Database<br/>(digikam4.db)"]
     
     G --> I["DigiKam Application"]
     I --> J["Enhanced Photo Tagging<br/>with Genealogy Data"]

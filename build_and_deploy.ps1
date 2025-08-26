@@ -39,21 +39,13 @@ catch {
 Pop-Location
 
 # Source and destination paths
-$sourceUtilsExe = ".\build\src\Debug\rootsmagic_utils.exe"
 $sourceSyncExe = ".\build\src\Debug\rootsmagic_sync.exe"
-$sourceHuskeyPs1 = ".\RootsMagicHuskeyPeopleToDigiKamTags.ps1"
-$sourceKennedyPs1 = ".\RootsMagicKennedyPeopleToDigiKamTags.ps1"
 $sourceHuskeySyncPs1 = ".\RootsMagicHuskeySyncToDigiKamTags.ps1"
 $sourceKennedySyncPs1 = ".\RootsMagicKennedySyncToDigiKamTags.ps1"
 $KennedyDigiKamDestPath = "C:\Users\shuskey\Github\Timeline-Traveler\Assets\Resources\SampleData\DigiKam"
 $HuskeyDigiKamDestPath = "C:\Users\shuskey\OneDrive\Pictures"
 
-# Verify source executables exist
-if (-not (Test-Path $sourceUtilsExe)) {
-    Write-Host "Error: Built executable not found at $sourceUtilsExe" -ForegroundColor Red
-    exit 1
-}
-
+# Verify source executable exists
 if (-not (Test-Path $sourceSyncExe)) {
     Write-Host "Error: Built executable not found at $sourceSyncExe" -ForegroundColor Red
     exit 1
@@ -70,12 +62,10 @@ if (-not (Test-Path $HuskeyDigiKamDestPath)) {
     exit 1
 }
 
-# Copy the executables to both locations
-Write-Host "Copying executables and scripts to $KennedyDigiKamDestPath"
+# Copy the executable and scripts to both locations
+Write-Host "Copying executable and scripts to $KennedyDigiKamDestPath"
 try {
-    Copy-Item -Path $sourceUtilsExe -Destination $KennedyDigiKamDestPath -Force
     Copy-Item -Path $sourceSyncExe -Destination $KennedyDigiKamDestPath -Force
-    Copy-Item -Path $sourceKennedyPs1 -Destination $KennedyDigiKamDestPath -Force
     Copy-Item -Path $sourceKennedySyncPs1 -Destination $KennedyDigiKamDestPath -Force
     Write-Host "Successfully deployed to ${KennedyDigiKamDestPath}" -ForegroundColor Green
 }
@@ -84,11 +74,9 @@ catch {
     exit 1
 }
 
-Write-Host "Copying executables and scripts to $HuskeyDigiKamDestPath"
+Write-Host "Copying executable and scripts to $HuskeyDigiKamDestPath"
 try {
-    Copy-Item -Path $sourceUtilsExe -Destination $HuskeyDigiKamDestPath -Force
     Copy-Item -Path $sourceSyncExe -Destination $HuskeyDigiKamDestPath -Force
-    Copy-Item -Path $sourceHuskeyPs1 -Destination $HuskeyDigiKamDestPath -Force
     Copy-Item -Path $sourceHuskeySyncPs1 -Destination $HuskeyDigiKamDestPath -Force
     Write-Host "Successfully deployed to ${HuskeyDigiKamDestPath}" -ForegroundColor Green
 }
@@ -101,12 +89,8 @@ Write-Host ""
 Write-Host "Build and deploy completed successfully!" -ForegroundColor Green
 Write-Host "Deployed to these locations:"
 Write-Host "Kennedy Location:"
-Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceUtilsExe -Leaf)"
 Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
-Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceKennedyPs1 -Leaf)"
 Write-Host "- ${KennedyDigiKamDestPath}\$(Split-Path $sourceKennedySyncPs1 -Leaf)"
 Write-Host "Huskey Location:"
-Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceUtilsExe -Leaf)" 
 Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceSyncExe -Leaf)"
-Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceHuskeyPs1 -Leaf)"
 Write-Host "- ${HuskeyDigiKamDestPath}\$(Split-Path $sourceHuskeySyncPs1 -Leaf)"

@@ -74,6 +74,10 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
     auto rmPeople = loadRootsMagicPeople();
     std::cout << "Found " << rmPeople.size() << " people in RootsMagic" << std::endl;
 
+    std::cout << "Loading family data..." << std::endl;
+    auto families = loadFamilyData();
+    std::cout << "Found " << families.size() << " families in RootsMagic" << std::endl;
+
     std::cout << "Loading existing DigiKam tags..." << std::endl;
     auto existingTags = loadExistingDigiKamTags(parentTagName);
     std::cout << "Found " << existingTags.size() << " existing RootsMagic tags in DigiKam" << std::endl;
@@ -118,9 +122,68 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
         // Phase 3: Synchronize
         std::cout << "Synchronizing tags..." << std::endl;
         
+        // First, handle family-based parenting for existing tags
+        std::cout << "Checking for existing tags that need family parenting..." << std::endl;
+        for (const auto& person : rmPeople) {
+            if (person.familyId > 0) {
+                auto familyIt = families.find(person.familyId);
+                if (familyIt != families.end()) {
+                    const FamilyRecord& family = familyIt->second;
+                    
+                    // Create the family tag if it doesn't exist
+                    if (!createFamilyTag(family, parentTagName)) {
+                        std::cerr << "Failed to create family tag for: " << family.familyTagName << std::endl;
+                        continue;
+                    }
+                    
+                    // Check if this person's tag exists and needs to be moved to the family
+                    auto existingTagIt = existingTags.find(person.ownerId);
+                    if (existingTagIt != existingTags.end()) {
+                        // Check if the tag is currently under the RootsMagic parent
+                        std::string checkParentSql = R"(
+                            SELECT t.pid FROM Tags t 
+                            WHERE t.id = ? AND t.pid = (SELECT id FROM Tags WHERE name = ?)
+                        )";
+                        
+                        sqlite3_stmt* stmt;
+                        int rc = sqlite3_prepare_v2(m_digiKamDb, checkParentSql.c_str(), -1, &stmt, nullptr);
+                        if (rc == SQLITE_OK) {
+                            sqlite3_bind_int(stmt, 1, existingTagIt->second.tagId);
+                            sqlite3_bind_text(stmt, 2, parentTagName.c_str(), -1, SQLITE_STATIC);
+                            
+                            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                                // Tag is under RootsMagic parent, move it to family parent
+                                std::string updateParentSql = R"(
+                                    UPDATE Tags SET pid = (SELECT id FROM Tags WHERE name = ?) 
+                                    WHERE id = ?
+                                )";
+                                
+                                sqlite3_stmt* updateStmt;
+                                int updateRc = sqlite3_prepare_v2(m_digiKamDb, updateParentSql.c_str(), -1, &updateStmt, nullptr);
+                                if (updateRc == SQLITE_OK) {
+                                    sqlite3_bind_text(updateStmt, 1, family.familyTagName.c_str(), -1, SQLITE_STATIC);
+                                    sqlite3_bind_int(updateStmt, 2, existingTagIt->second.tagId);
+                                    
+                                    if (sqlite3_step(updateStmt) == SQLITE_DONE) {
+                                        std::cout << "Moved '" << person.formattedName << "' to family '" << family.familyTagName << "'" << std::endl;
+                                    }
+                                    sqlite3_finalize(updateStmt);
+                                }
+                            }
+                            sqlite3_finalize(stmt);
+                        }
+                    }
+                }
+            }
+        }
+        
         // Track which existing tags are still valid
         std::vector<int> validTagIds;
         int newPeopleCount = 0;
+        
+        std::cout << "Synchronizing " << rmPeople.size() << " people..." << std::endl;
+        int syncProgress = 0;
+        int lastSyncProgressPercent = 0;
         
         for (const auto& person : rmPeople) {
             auto it = existingTags.find(person.ownerId);
@@ -136,7 +199,7 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
             } else {
                 // New person - create tag
                 newPeopleCount++;
-                if (createPersonTag(person, parentTagName)) {
+                if (createPersonTag(person, parentTagName, families)) {
                     m_tagsCreated++;
                     std::cout << "Created: " << person.formattedName << " (OwnerID: " << person.ownerId << ")" << std::endl;
                 } else {
@@ -148,6 +211,14 @@ bool RootsMagicSync::synchronizeTags(const std::string& parentTagName, const std
                         std::cerr << "Failed to create or rescue tag for: " << person.formattedName << " (OwnerID: " << person.ownerId << ")" << std::endl;
                     }
                 }
+            }
+            
+            // Progress tracking for synchronization
+            syncProgress++;
+            int currentSyncProgressPercent = (syncProgress * 100) / rmPeople.size();
+            if (currentSyncProgressPercent > lastSyncProgressPercent) {
+                std::cout << "Sync Progress: " << currentSyncProgressPercent << "% (" << syncProgress << "/" << rmPeople.size() << " people)" << std::endl;
+                lastSyncProgressPercent = currentSyncProgressPercent;
             }
         }
         
@@ -230,9 +301,19 @@ std::vector<PersonRecord> RootsMagicSync::loadRootsMagicPeople()
 {
     std::vector<PersonRecord> people;
     
-    // Query only primary names to avoid alternate name conflicts
-    // IsPrimary = 1 indicates the primary name for each person
-    const char* sql = "SELECT DISTINCT OwnerID, Surname, Given, BirthYear, DeathYear FROM NameTable WHERE IsPrimary = 1";
+    std::cout << "Loading people and family relationships..." << std::endl;
+    
+    // Optimized query: Get all people with their family relationships in a single JOIN
+    const char* sql = R"(
+        SELECT DISTINCT 
+            n.OwnerID, n.Surname, n.Given, n.BirthYear, n.DeathYear,
+            c.FamilyID
+        FROM NameTable n
+        LEFT JOIN ChildTable c ON n.OwnerID = c.ChildID
+        WHERE n.IsPrimary = 1
+        ORDER BY n.OwnerID
+    )";
+    
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(m_rootsMagicDb, sql, -1, &stmt, nullptr);
     
@@ -241,6 +322,23 @@ std::vector<PersonRecord> RootsMagicSync::loadRootsMagicPeople()
         return people;
     }
 
+    // First, count total rows for progress tracking
+    int totalRows = 0;
+    sqlite3_stmt* countStmt;
+    const char* countSql = "SELECT COUNT(*) FROM NameTable WHERE IsPrimary = 1";
+    int countRc = sqlite3_prepare_v2(m_rootsMagicDb, countSql, -1, &countStmt, nullptr);
+    if (countRc == SQLITE_OK) {
+        if (sqlite3_step(countStmt) == SQLITE_ROW) {
+            totalRows = sqlite3_column_int(countStmt, 0);
+        }
+        sqlite3_finalize(countStmt);
+    }
+    
+    std::cout << "Found " << totalRows << " people to process..." << std::endl;
+    
+    int processedRows = 0;
+    int lastProgressPercent = 0;
+    
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         PersonRecord person;
         person.ownerId = sqlite3_column_int(stmt, 0);
@@ -249,16 +347,122 @@ std::vector<PersonRecord> RootsMagicSync::loadRootsMagicPeople()
         person.birthYear = sqlite3_column_int(stmt, 3);
         person.deathYear = sqlite3_column_int(stmt, 4);
         
+        // Get family ID (may be NULL if person has no family)
+        if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+            person.familyId = sqlite3_column_int(stmt, 5);
+        } else {
+            person.familyId = 0; // No family
+        }
+        
         // Trim whitespace
         person.surname = person.surname.substr(0, person.surname.find_last_not_of(" \t") + 1);
         person.given = person.given.substr(0, person.given.find_last_not_of(" \t") + 1);
         
         person.formattedName = formatPersonName(person);
         people.push_back(person);
+        
+        // Progress tracking
+        processedRows++;
+        int currentProgressPercent = (processedRows * 100) / totalRows;
+        if (currentProgressPercent > lastProgressPercent) {
+            std::cout << "Progress: " << currentProgressPercent << "% (" << processedRows << "/" << totalRows << " people)" << std::endl;
+            lastProgressPercent = currentProgressPercent;
+        }
     }
 
     sqlite3_finalize(stmt);
+    
+    std::cout << "Successfully loaded " << people.size() << " people with family relationships." << std::endl;
     return people;
+}
+
+std::unordered_map<int, FamilyRecord> RootsMagicSync::loadFamilyData()
+{
+    std::unordered_map<int, FamilyRecord> families;
+    
+    std::cout << "Loading family data..." << std::endl;
+    
+    // Query family data from FamilyTable and get parent names from NameTable
+    const char* sql = R"(
+        SELECT f.FamilyID, f.FatherID, f.MotherID,
+               fn1.Given as FatherGiven, fn1.Surname as FatherSurname,
+               fn2.Given as MotherGiven, fn2.Surname as MotherSurname
+        FROM FamilyTable f
+        LEFT JOIN NameTable fn1 ON f.FatherID = fn1.OwnerID AND fn1.IsPrimary = 1
+        LEFT JOIN NameTable fn2 ON f.MotherID = fn2.OwnerID AND fn2.IsPrimary = 1
+        ORDER BY f.FamilyID
+    )";
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(m_rootsMagicDb, sql, -1, &stmt, nullptr);
+    
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to query RootsMagic FamilyTable: " << sqlite3_errmsg(m_rootsMagicDb) << std::endl;
+        return families;
+    }
+    
+    // Count total families for progress tracking
+    int totalFamilies = 0;
+    sqlite3_stmt* countStmt;
+    const char* countSql = "SELECT COUNT(*) FROM FamilyTable";
+    int countRc = sqlite3_prepare_v2(m_rootsMagicDb, countSql, -1, &countStmt, nullptr);
+    if (countRc == SQLITE_OK) {
+        if (sqlite3_step(countStmt) == SQLITE_ROW) {
+            totalFamilies = sqlite3_column_int(countStmt, 0);
+        }
+        sqlite3_finalize(countStmt);
+    }
+    
+    std::cout << "Found " << totalFamilies << " families to process..." << std::endl;
+    
+    int processedFamilies = 0;
+    int lastProgressPercent = 0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        FamilyRecord family;
+        family.familyId = sqlite3_column_int(stmt, 0);
+        family.fatherOwnerId = sqlite3_column_int(stmt, 1);
+        family.motherOwnerId = sqlite3_column_int(stmt, 2);
+        
+        // Get father's name (may be NULL)
+        if (sqlite3_column_type(stmt, 3) != SQLITE_NULL) {
+            family.fatherGiven = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            family.fatherSurname = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        } else {
+            family.fatherGiven = "";
+            family.fatherSurname = "";
+        }
+        
+        // Get mother's name (may be NULL)
+        if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+            family.motherGiven = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+            family.motherSurname = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+        } else {
+            family.motherGiven = "";
+            family.motherSurname = "";
+        }
+        
+        // Trim whitespace
+        family.fatherGiven = family.fatherGiven.substr(0, family.fatherGiven.find_last_not_of(" \t") + 1);
+        family.fatherSurname = family.fatherSurname.substr(0, family.fatherSurname.find_last_not_of(" \t") + 1);
+        family.motherGiven = family.motherGiven.substr(0, family.motherGiven.find_last_not_of(" \t") + 1);
+        family.motherSurname = family.motherSurname.substr(0, family.motherSurname.find_last_not_of(" \t") + 1);
+        
+        family.familyTagName = formatFamilyTagName(family);
+        families[family.familyId] = family;
+        
+        // Progress tracking
+        processedFamilies++;
+        int currentProgressPercent = (processedFamilies * 100) / totalFamilies;
+        if (currentProgressPercent > lastProgressPercent) {
+            std::cout << "Family Progress: " << currentProgressPercent << "% (" << processedFamilies << "/" << totalFamilies << " families)" << std::endl;
+            lastProgressPercent = currentProgressPercent;
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    std::cout << "Successfully loaded " << families.size() << " families." << std::endl;
+    return families;
 }
 
 std::unordered_map<int, DigiKamTag> RootsMagicSync::loadExistingDigiKamTags(const std::string& parentTagName)
@@ -328,7 +532,8 @@ bool RootsMagicSync::ensureParentTagExists(const std::string& tagName)
     return true;
 }
 
-bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::string& parentTagName)
+bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::string& parentTagName, 
+                                    const std::unordered_map<int, FamilyRecord>& families)
 {
     // First check if tag already exists under RootsMagic parent with the same OwnerID
     std::string checkRootsMagicSql = R"(
@@ -373,7 +578,27 @@ bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::stri
         sqlite3_finalize(stmt);
     }
     
-    // Create the tag
+    // Determine the appropriate parent tag for this person
+    std::string actualParentTagName = parentTagName;
+    
+    // Check if this person has a family
+    if (person.familyId > 0) {
+        auto familyIt = families.find(person.familyId);
+        if (familyIt != families.end()) {
+            const FamilyRecord& family = familyIt->second;
+            
+            // Create or ensure the family tag exists
+            if (!createFamilyTag(family, parentTagName)) {
+                std::cerr << "Failed to create family tag for: " << family.familyTagName << std::endl;
+                return false;
+            }
+            
+            // Use the family tag as the parent
+            actualParentTagName = family.familyTagName;
+        }
+    }
+    
+    // Create the person tag under the appropriate parent
     std::string createTagSql = R"(
         INSERT INTO Tags (name, pid, icon, iconkde) 
         SELECT ?, id, NULL, 'user' FROM Tags WHERE name = ?
@@ -386,7 +611,7 @@ bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::stri
     }
     
     sqlite3_bind_text(stmt, 1, person.formattedName.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, parentTagName.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, actualParentTagName.c_str(), -1, SQLITE_STATIC);
     
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -436,6 +661,74 @@ bool RootsMagicSync::createPersonTag(const PersonRecord& person, const std::stri
     
     if (rc != SQLITE_DONE) {
         std::cerr << "Failed to execute addPersonSql: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+bool RootsMagicSync::createFamilyTag(const FamilyRecord& family, const std::string& parentTagName)
+{
+    // Check if family tag already exists
+    std::string checkSql = "SELECT COUNT(*) FROM Tags WHERE name = ?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(m_digiKamDb, checkSql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    
+    sqlite3_bind_text(stmt, 1, family.familyTagName.c_str(), -1, SQLITE_STATIC);
+    
+    bool exists = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        exists = sqlite3_column_int(stmt, 0) > 0;
+    }
+    sqlite3_finalize(stmt);
+    
+    if (exists) {
+        // Family tag already exists, no need to create it
+        return true;
+    }
+    
+    // Create the family tag under the RootsMagic parent
+    std::string createSql = R"(
+        INSERT INTO Tags (name, pid, icon, iconkde) 
+        SELECT ?, id, NULL, 'user' FROM Tags WHERE name = ?
+    )";
+    
+    rc = sqlite3_prepare_v2(m_digiKamDb, createSql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare createFamilyTag SQL: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt, 1, family.familyTagName.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, parentTagName.c_str(), -1, SQLITE_STATIC);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to execute createFamilyTag SQL: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+        return false;
+    }
+    
+    // Add family properties
+    int tagId = sqlite3_last_insert_rowid(m_digiKamDb);
+    
+    std::string addFamilyIdSql = "INSERT INTO TagProperties (tagid, property, value) VALUES (?, 'family_id', ?)";
+    rc = sqlite3_prepare_v2(m_digiKamDb, addFamilyIdSql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare addFamilyIdSql: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
+        return false;
+    }
+    
+    sqlite3_bind_int(stmt, 1, tagId);
+    sqlite3_bind_int(stmt, 2, family.familyId);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        std::cerr << "Failed to execute addFamilyIdSql: " << sqlite3_errmsg(m_digiKamDb) << std::endl;
         return false;
     }
     
@@ -648,6 +941,28 @@ std::string RootsMagicSync::formatPersonName(const PersonRecord& person)
     std::string deathYearStr = (person.deathYear == 0) ? "unknown" : std::to_string(person.deathYear);
     
     return person.given + " " + person.surname + " " + birthYearStr + "-" + deathYearStr + " (OwnerID: " + std::to_string(person.ownerId) + ")";
+}
+
+std::string RootsMagicSync::formatFamilyTagName(const FamilyRecord& family)
+{
+    std::string fatherFullName;
+    std::string motherFullName;
+    
+    // Format father's full name with OwnerID
+    if (family.fatherGiven.empty() && family.fatherSurname.empty() || family.fatherOwnerId == 0) {
+        fatherFullName = "unknown";
+    } else {
+        fatherFullName = family.fatherGiven + " " + family.fatherSurname + " (OwnerID: " + std::to_string(family.fatherOwnerId) + ")";
+    }
+    
+    // Format mother's full name with OwnerID
+    if (family.motherGiven.empty() && family.motherSurname.empty() || family.motherOwnerId == 0) {
+        motherFullName = "unknown";
+    } else {
+        motherFullName = family.motherGiven + " " + family.motherSurname + " (OwnerID: " + std::to_string(family.motherOwnerId) + ")";
+    }
+    
+    return fatherFullName + " and " + motherFullName + " Family (FamilyID: " + std::to_string(family.familyId) + ")";
 }
 
 std::string RootsMagicSync::escapeSqlString(const std::string& str)

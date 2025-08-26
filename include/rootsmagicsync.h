@@ -12,6 +12,18 @@ struct PersonRecord {
     int birthYear;
     int deathYear;
     std::string formattedName;
+    int familyId;  // New field to track family ID
+};
+
+struct FamilyRecord {
+    int familyId;
+    int fatherOwnerId;
+    int motherOwnerId;
+    std::string fatherGiven;
+    std::string fatherSurname;
+    std::string motherGiven;
+    std::string motherSurname;
+    std::string familyTagName;
 };
 
 struct DigiKamTag {
@@ -37,11 +49,14 @@ public:
 private:
     // Data loading functions
     std::vector<PersonRecord> loadRootsMagicPeople();
+    std::unordered_map<int, FamilyRecord> loadFamilyData();
     std::unordered_map<int, DigiKamTag> loadExistingDigiKamTags(const std::string& parentTagName);
 
     // Sync operations
     bool ensureParentTagExists(const std::string& tagName);
-    bool createPersonTag(const PersonRecord& person, const std::string& parentTagName);
+    bool createFamilyTag(const FamilyRecord& family, const std::string& parentTagName);
+    bool createPersonTag(const PersonRecord& person, const std::string& parentTagName, 
+                        const std::unordered_map<int, FamilyRecord>& families);
     bool updatePersonTag(int tagId, const PersonRecord& person);
     bool moveOrphanedTagsToLostFound(const std::vector<int>& orphanedTagIds, 
                                     const std::string& lostFoundTagName,
@@ -53,6 +68,7 @@ private:
 
     // Utility functions
     std::string formatPersonName(const PersonRecord& person);
+    std::string formatFamilyTagName(const FamilyRecord& family);
     std::string escapeSqlString(const std::string& str);
     bool executeQuery(sqlite3* db, const std::string& query);
     

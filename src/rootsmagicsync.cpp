@@ -303,13 +303,20 @@ std::vector<PersonRecord> RootsMagicSync::loadRootsMagicPeople()
     
     std::cout << "Loading people and family relationships..." << std::endl;
     
-    // Optimized query: Get all people with their family relationships in a single JOIN
+    // Fixed query: Handle people in multiple families by selecting primary family only
+    // This prevents duplicate PersonRecord creation for people in multiple families
     const char* sql = R"(
-        SELECT DISTINCT 
+        SELECT 
             n.OwnerID, n.Surname, n.Given, n.BirthYear, n.DeathYear,
-            c.FamilyID
+            COALESCE(c.PrimaryFamilyID, 0) as FamilyID
         FROM NameTable n
-        LEFT JOIN ChildTable c ON n.OwnerID = c.ChildID
+        LEFT JOIN (
+            SELECT 
+                ChildID,
+                MIN(FamilyID) as PrimaryFamilyID
+            FROM ChildTable
+            GROUP BY ChildID
+        ) c ON n.OwnerID = c.ChildID
         WHERE n.IsPrimary = 1
         ORDER BY n.OwnerID
     )";
@@ -994,3 +1001,4 @@ bool RootsMagicSync::executeQuery(sqlite3* db, const std::string& query)
     
     return true;
 }
+
